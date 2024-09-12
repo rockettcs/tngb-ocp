@@ -1,0 +1,296 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  labels:
+    app.kubernetes.io/instance: openshift-pipelines 
+  name: pipeline-tngbpoc1-1
+spec:
+  params:
+    - default: 'true'
+      description: True In Case if you want to create/update the ConfigMap
+      name: CM_FLAG
+      type: string
+    - default: tngbpoc1-1
+      description: Fuse application name
+      name: APP_NAME
+      type: string
+    - default: 'https://github.com/praveenrachamreddy/tngb_poc_1.1.git'
+      description: clone git url
+      name: GIT_REPO
+      type: string
+    - default: main
+      description: branch name
+      name: GIT_REVISION
+      type: string
+    - default: 'https://github.com/praveenrachamreddy/tngb-helm-demo.git'
+      description: clone git url
+      name: HELM_GIT_REPO
+      type: string
+    - default: main
+      description: branch name
+      name: HELM_GIT_REVISION
+      type: string
+    - default: 'image-registry.openshift-image-registry.svc:5000'
+      description: registry name
+      name: IMAGE_NAME
+      type: string
+    - default: v4
+      description: 'tag of the image '
+      name: IMAGE_TAG
+      type: string
+    - default: tngb-demo-project-app
+      description: project name where image will be created
+      name: NS_NAME
+      type: string
+    - default: prohan.intergra@tatacapital.com
+      description: Used for Updating Image Version in Git
+      name: USER_EMAIL
+      type: string
+    - default: rohan_integra
+      description: Used for Updating Image Version in Git
+      name: USER_NAME
+      type: string
+    - default: dev
+      description: Environment where it is deployed
+      name: ENV
+      type: string
+    - default: src/main/resources
+      description: path of application-properties
+      name: APP_PROP_PATH
+      type: string
+    - default: tngb-demo-project-app
+      description: project where application properties will be deployed
+      name: CM_NS_NAME
+      type: string
+  tasks:
+    - name: git-clone
+      params:
+        - name: url
+          value: $(params.GIT_REPO)
+        - name: revision
+          value: $(params.GIT_REVISION)
+        - name: refspec
+          value: ''
+        - name: submodules
+          value: 'true'
+        - name: depth
+          value: '1'
+        - name: sslVerify
+          value: 'false'
+        - name: crtFileName
+          value: ca-bundle.crt
+        - name: subdirectory
+          value: $(params.APP_NAME)
+        - name: sparseCheckoutDirectories
+          value: ''
+        - name: deleteExisting
+          value: 'true'
+        - name: httpProxy
+          value: ''
+        - name: httpsProxy
+          value: ''
+        - name: noProxy
+          value: ''
+        - name: verbose
+          value: 'true'
+        - name: gitInitImage
+          value: 'registry.redhat.io/openshift-pipelines/pipelines-git-init-rhel8@sha256:429ba9c10dfcff4ee0154ab75f9bd06fd306f019c0ed0b062ba7c03e56e3e33b'
+        - name: userHome
+          value: /home/git
+      taskRef:
+        kind: ClusterTask
+        name: git-clone
+      workspaces:
+        - name: ssl-ca-directory
+          workspace: my-workspace
+        - name: output
+          workspace: my-workspace
+    - name: maven
+      params:
+        - name: MAVEN_IMAGE
+          value: 'registry.redhat.io/ubi8/openjdk-17@sha256:923b18a62d892ec23b6bbf714ecb237a0a0fa3cd225fbf89d39966dd8d421c72'
+        - name: GOALS
+          value:
+            - install
+        - name: MAVEN_MIRROR_URL
+          value: ''
+        - name: SERVER_USER
+          value: ''
+        - name: SERVER_PASSWORD
+          value: ''
+        - name: PROXY_USER
+          value: ''
+        - name: PROXY_PASSWORD
+          value: ''
+        - name: PROXY_PORT
+          value: ''
+        - name: PROXY_HOST
+          value: ''
+        - name: PROXY_NON_PROXY_HOSTS
+          value: ''
+        - name: PROXY_PROTOCOL
+          value: ''
+        - name: CONTEXT_DIR
+          value: $(params.APP_NAME)
+      runAfter:
+        - git-clone
+      taskRef:
+        kind: ClusterTask
+        name: maven
+      workspaces:
+        - name: source
+          workspace: my-workspace
+        - name: maven-settings
+          workspace: maven-settings
+    - name: git-update-deployment
+      params:
+        - name: url
+          value: $(params.HELM_GIT_REPO)
+        - name: revision
+          value: $(params.HELM_GIT_REVISION)
+        - name: refspec
+          value: ''
+        - name: submodules
+          value: 'true'
+        - name: depth
+          value: '1'
+        - name: sslVerify
+          value: 'true'
+        - name: subdirectory
+          value: $(params.APP_NAME)
+        - name: sparseCheckoutDirectories
+          value: ''
+        - name: deleteExisting
+          value: 'true'
+        - name: httpProxy
+          value: ''
+        - name: httpsProxy
+          value: ''
+        - name: noProxy
+          value: ''
+        - name: verbose
+          value: 'true'
+        - name: gitInitImage
+          value: 'registry.redhat.io/openshift-pipelines/pipelines-git-init-rhel8@sha256:429ba9c10dfcff4ee0154ab75f9bd06fd306f019c0ed0b062ba7c03e56e3e33b'
+        - name: CURRENT_IMAGE
+          value: $(params.IMAGE_NAME)/$(params.NS_NAME)/$(params.APP_NAME)
+        - name: NEW_IMAGE
+          value: $(params.IMAGE_NAME)/$(params.NS_NAME)/$(params.APP_NAME)
+        - name: CONTEXT
+          value: .
+        - name: IMAGE_TAG
+          value: $(params.IMAGE_TAG)
+        - name: USER_EMAIL
+          value: $(params.USER_EMAIL)
+        - name: USER_NAME
+          value: $(params.USER_NAME)
+        - name: ENV
+          value: $(params.ENV)
+      runAfter:
+        - create-configmap
+      taskRef:
+        kind: Task
+        name: git-update-deployment
+      workspaces:
+        - name: output
+          workspace: my-workspace
+    - name: create-configmap
+      params:
+        - name: ENV
+          value: $(params.ENV)
+        - name: CONTEXT
+          value: $(params.APP_NAME)
+        - name: PATH
+          value: $(params.APP_PROP_PATH)
+        - name: configmapflag
+          value: $(params.CM_FLAG)
+        - name: nsname
+          value: $(params.CM_NS_NAME)
+      runAfter:
+        - buildah-custom
+      taskRef:
+        kind: Task
+        name: create-configmap
+      workspaces:
+        - name: output
+          workspace: my-workspace
+    - name: buildah-custom
+      params:
+        - name: IMAGE
+          value: '$(params.IMAGE_NAME)/$(params.NS_NAME)/$(params.APP_NAME):$(params.IMAGE_TAG)'
+        - name: BUILDER_IMAGE
+          value: 'registry.redhat.io/rhel8/buildah@sha256:00795fafdab9bbaa22cd29d1faa1a01e604e4884a2c935c1bf8e3d1f0ad1c084'
+        - name: STORAGE_DRIVER
+          value: vfs
+        - name: DOCKERFILE
+          value: ./Dockerfile
+        - name: CONTEXT
+          value: $(params.APP_NAME)
+        - name: TLSVERIFY
+          value: 'true'
+        - name: FORMAT
+          value: oci
+        - name: BUILD_EXTRA_ARGS
+          value: ''
+        - name: PUSH_EXTRA_ARGS
+          value: ''
+        - name: SKIP_PUSH
+          value: 'false'
+      runAfter:
+        - maven
+      taskRef:
+        kind: Task
+        name: buildah-custom
+      workspaces:
+        - name: source
+          workspace: my-workspace
+        - name: dockerfile
+          workspace: dockerfile
+    - name: git-update-pipeline
+      params:
+        - name: url
+          value: 'http://172.16.18.199/atlas-esb-camel3/openshift-pipelines.git'
+        - name: revision
+          value: master
+        - name: refspec
+          value: ''
+        - name: submodules
+          value: 'true'
+        - name: depth
+          value: '1'
+        - name: sslVerify
+          value: 'true'
+        - name: subdirectory
+          value: $(params.APP_NAME)
+        - name: sparseCheckoutDirectories
+          value: ''
+        - name: deleteExisting
+          value: 'true'
+        - name: httpProxy
+          value: ''
+        - name: httpsProxy
+          value: ''
+        - name: noProxy
+          value: ''
+        - name: verbose
+          value: 'true'
+        - name: gitInitImage
+          value: 'registry.redhat.io/openshift-pipelines/pipelines-git-init-rhel8@sha256:429ba9c10dfcff4ee0154ab75f9bd06fd306f019c0ed0b062ba7c03e56e3e33b'
+        - name: IMAGE_TAG
+          value: $(params.IMAGE_TAG)
+        - name: USER_EMAIL
+          value: $(params.USER_EMAIL)
+        - name: USER_NAME
+          value: $(params.USER_NAME)
+      runAfter:
+        - git-update-deployment
+      taskRef:
+        kind: Task
+        name: git-update-pipeline
+      workspaces:
+        - name: output
+          workspace: my-workspace
+  workspaces:
+    - name: my-workspace
+    - name: maven-settings
+    - name: dockerfile

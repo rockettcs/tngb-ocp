@@ -1,0 +1,43 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: create-configmap
+spec:
+  description: This Task can be used to update image digest in a Git repo using kustomize
+  params:
+    - name: ENV
+      type: string
+    - name: CONTEXT
+      type: string
+    - name: PATH
+      type: string
+    - name: configmapflag
+      type: string
+    - name: nsname
+      type: string
+  steps:
+    - computeResources: {}
+      env:
+        - name: HOME
+          value: /tekton/home
+      image: 'image-registry.openshift-image-registry.svc:5000/openshift/cli:latest'
+      name: clone
+      script: |
+        #!/usr/bin/env bash
+
+        CHECKOUT_DIR="$(workspaces.output.path)/$(params.CONTEXT)"
+
+         if [[ "$(params.configmapflag)" == "true" ]]; then
+             echo "*****************"
+             echo "Creating the ConfigMap $(CHECKOUT_DIR)/$(params.PATH)/application-$(params.ENV).properties"
+             oc delete configmap $(params.CONTEXT)-$(params.ENV).properties -n $(params.nsname)
+             oc create configmap $(params.CONTEXT)-$(params.ENV).properties --from-file=${CHECKOUT_DIR}/$(params.PATH)/application-$(params.ENV).properties -n $(params.nsname)
+             echo "*****************"
+         else
+           echo ""
+           echo "Skipping the Step"
+           echo ""
+         fi;
+  workspaces:
+    - description: The git repo will be cloned onto the volume backing this workspace
+      name: output
